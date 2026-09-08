@@ -1,0 +1,21 @@
+# =============================================================================
+# requirements.txt — Module 1: Foundational dependencies
+# =============================================================================
+# This file is organized by subsystem, and grows as we build each module.
+# Pinned versions (==) rather than loose ranges (>=) are used deliberately:
+# in production, an untested new version of a dependency should never be
+# silently pulled in by a fresh `pip install`. This is called "reproducible
+# builds" — a core MLOps principle.
+
+# --- Web framework & server ---
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+
+# --- Configuration & validation ---
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+
+# --- Dev tooling ---
+pytest==8.3.3
+httpx==0.27.2

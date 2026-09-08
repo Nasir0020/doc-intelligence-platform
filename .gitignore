@@ -1,0 +1,23 @@
+# Environments & secrets
+.env
+venv/
+*.egg-info/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Node / frontend
+node_modules/
+.next/
+frontend/dist/
+
+# MLflow local tracking data
+mlflow/mlruns/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/

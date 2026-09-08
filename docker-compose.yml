@@ -1,0 +1,33 @@
+# docker-compose.yml
+# ===================
+# Orchestrates all services that make up this system so the whole stack
+# runs with a single command: `docker compose up`.
+#
+# Why Docker Compose at all, instead of running each service manually?
+#   Running Postgres, Weaviate, MLflow, and our own backend by hand means
+#   remembering ports, env vars, and startup order every time. Compose
+#   captures all of that in one declarative file — this is exactly how
+#   local development environments are set up at most companies before
+#   anything reaches a real Kubernetes cluster.
+#
+# NOTE: this file currently only has the backend service (Module 1).
+#   Postgres, Weaviate, and MLflow services will be added to this same
+#   file as we build Modules 4, 8, and 11 — we're not skipping them,
+#   we simply haven't built what they'd connect to yet.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"          # host_port:container_port
+    env_file:
+      - .env
+    volumes:
+      - ./backend/app:/app/app   # live-reloads code changes without rebuild
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
