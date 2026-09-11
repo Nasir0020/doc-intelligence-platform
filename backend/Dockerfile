@@ -17,6 +17,17 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# --- System dependencies for Module 2 (OCR) ---
+# tesseract-ocr is a system-level binary, NOT a Python package — pip
+# cannot install it. This is a real, common gotcha: a requirements.txt
+# passing locally on a machine that happens to already have tesseract
+# installed (like our dev sandbox) can still fail in a fresh container
+# that doesn't have it. Docker images must explicitly install every
+# system dependency the app needs, not just the Python ones.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copying requirements.txt BEFORE the rest of the code is a deliberate
 # Docker layer-caching optimization: Docker caches each instruction as a
 # layer. If only application code changes (not dependencies), Docker
