@@ -98,6 +98,38 @@ class ParsedPage(BaseModel):
     )
 
 
+class ChunkType(str, Enum):
+    """Distinguishes prose text chunks from table chunks downstream
+    consumers (the embedder, the LLM prompt builder) may want to treat
+    tables differently — e.g. always including full table chunks
+    verbatim in context rather than truncating them."""
+
+    TEXT = "text"
+    TABLE = "table"
+
+
+class Chunk(BaseModel):
+    """
+    A single unit of content ready to be embedded and indexed.
+
+    This is the final output of the ingestion pipeline and the INPUT
+    to Module 4 (embeddings). Every chunk carries enough metadata to
+    answer "where did this come from?" — which is what powers citations
+    in the final answer (Module 7).
+    """
+
+    chunk_id: str = Field(description="Stable unique identifier, e.g. 'doc123_chunk_04'")
+    source_filename: str
+    chunk_type: ChunkType
+    text: str
+    token_count: int
+    page_numbers: list[int] = Field(
+        description="Every page this chunk's content was drawn from — "
+        "usually one page, but can span two when a chunk merges the "
+        "tail of one page with the start of the next."
+    )
+
+
 class ParsedDocument(BaseModel):
     """The full result of parsing one document, made up of parsed pages."""
 
