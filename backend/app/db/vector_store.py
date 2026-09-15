@@ -136,7 +136,7 @@ class InMemoryVectorStore(VectorStore):
         # This is dramatically faster than a Python for-loop over rows
         # for anything beyond a handful of vectors, because NumPy
         # pushes the actual arithmetic down into compiled C code.
-        dot_products = self._vectors @ query_vector
+        dot_products = np.sum(self._vectors * query_vector, axis=1)
         norms = np.linalg.norm(self._vectors, axis=1) * np.linalg.norm(query_vector)
         # Avoid division by zero for any degenerate all-zero vector.
         norms = np.where(norms == 0, 1e-10, norms)
