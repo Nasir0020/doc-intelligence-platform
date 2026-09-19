@@ -102,6 +102,10 @@ class HybridRetriever:
         self._texts: list[str] = []
         self._page_numbers: list[list[int]] = []
 
+    @property
+    def is_empty(self) -> bool:
+        return len(self._chunk_ids) == 0
+
     def add_chunks(
         self,
         chunk_ids: list[str],

@@ -15,7 +15,7 @@ Why this file is deliberately thin:
 
 from fastapi import FastAPI
 
-from app.api.routes import health
+from app.api.routes import documents, health, query
 from app.config import settings
 
 # Creating the FastAPI application instance.
@@ -26,8 +26,10 @@ app = FastAPI(
     debug=settings.DEBUG,
 )
 
-# `include_router` mounts all endpoints defined in health.py under this
-# app. Routers are how FastAPI apps stay modular as they grow — each
-# subsystem (documents, query, health) gets its own router file instead
-# of every endpoint being defined directly in main.py.
+# `include_router` mounts all endpoints defined in each router file
+# under this app. Routers are how FastAPI apps stay modular as they
+# grow — each subsystem (documents, query, health) gets its own router
+# file instead of every endpoint being defined directly in main.py.
 app.include_router(health.router)
+app.include_router(documents.router)
+app.include_router(query.router)
