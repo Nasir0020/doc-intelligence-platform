@@ -1,0 +1,14 @@
+[
+  {
+    "question": "What was the APAC growth percentage?",
+    "relevant_chunk_ids": ["table_only.pdf_chunk_0000", "table_only.pdf_chunk_0001"]
+  },
+  {
+    "question": "How many features did engineering ship this quarter?",
+    "relevant_chunk_ids": ["other_topics.pdf_chunk_0000"]
+  },
+  {
+    "question": "Did customer support ticket volume increase or decrease?",
+    "relevant_chunk_ids": ["other_topics.pdf_chunk_0000"]
+  }
+]
