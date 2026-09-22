@@ -53,16 +53,16 @@ architecture diagram and rationale.
 ## Roadmap
 
 - [x] Module 1: Project scaffolding & configuration
-- [ ] Module 2: Document parsing & OCR ingestion
-- [ ] Module 3: Layout-aware chunking
-- [ ] Module 4: Embeddings & vector indexing
-- [ ] Module 5: Hybrid retrieval
-- [ ] Module 6: Cross-encoder reranking
-- [ ] Module 7: LLM generation & citation
-- [ ] Module 8: Full FastAPI backend
-- [ ] Module 9: RAGAS evaluation harness
-- [ ] Module 10: Frontend (Next.js)
-- [ ] Module 11: MLOps (MLflow, full Docker Compose, CI/CD)
+- [x] Module 2: Document parsing & OCR ingestion
+- [x] Module 3: Layout-aware chunking
+- [x] Module 4: Embeddings & vector indexing
+- [x] Module 5: Hybrid retrieval
+- [x] Module 6: Cross-encoder reranking
+- [x] Module 7: LLM generation & citation
+- [x] Module 8: Full FastAPI backend
+- [x] Module 9: Evaluation harness
+- [x] Module 10: Frontend (Next.js)
+- [x] Module 11: MLOps (MLflow, persistence & Docker Compose)
 - [ ] Module 12: Testing
 - [ ] Module 13: Cloud deployment
 - [ ] Module 14: Documentation & interview prep

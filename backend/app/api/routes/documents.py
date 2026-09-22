@@ -15,11 +15,15 @@ import tempfile
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_retriever
+from app.db.postgres import get_db
 from app.ingestion.chunker import chunk_document
 from app.ingestion.document_processor import process_pdf
 from app.ingestion.embedder import get_embedder
+from app.models.document import DocumentRecord
 from app.retrieval.retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)
@@ -36,23 +40,16 @@ class DocumentSummary(BaseModel):
     ocr_pages_used: int
 
 
-# In-memory document registry. Same documented limitation as
-# dependencies.py's InMemoryVectorStore: this dict lives only in this
-# process's RAM and is lost on restart. A real implementation would
-# persist this in Postgres (Module 11) — the DocumentSummary model
-# above is intentionally already shaped like a future ORM row, so that
-# swap will be mostly mechanical when we get there.
-_document_registry: dict[str, DocumentSummary] = {}
-
-
 @router.post("/upload", response_model=DocumentSummary, status_code=201)
 async def upload_document(
     file: UploadFile = File(...),
     retriever: HybridRetriever = Depends(get_retriever),
+    db: Session = Depends(get_db),
 ) -> DocumentSummary:
     """
     Accepts a PDF upload, runs it through the full ingestion pipeline
-    (parse -> chunk -> embed -> index), and returns a summary.
+    (parse -> chunk -> embed -> index), persists its metadata to
+    Postgres, and returns a summary.
 
     Why `async def` here specifically (recall Module 1's discussion of
     async vs sync routes): `await file.read()` is a genuinely async
@@ -65,11 +62,20 @@ async def upload_document(
     higher-throughput production version would push the blocking
     parsing/embedding work into a background task queue (Celery, or
     FastAPI's own BackgroundTasks) instead of blocking the request
-    entirely — noted as a real scaling improvement for Module 11/13,
-    not implemented here to keep this module focused on wiring.
+    entirely — noted as a real scaling improvement for Module 13, not
+    implemented here to keep this module focused on wiring.
     """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+
+    existing = db.scalar(
+        select(DocumentRecord).where(DocumentRecord.filename == file.filename)
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A document named '{file.filename}' has already been indexed.",
+        )
 
     # Our parsing pipeline (PyMuPDF, pdfplumber) operates on file PATHS,
     # not in-memory bytes, so we write the upload to a temp file first.
@@ -104,13 +110,22 @@ async def upload_document(
             page_numbers=[c.page_numbers for c in chunks],
         )
 
-        summary = DocumentSummary(
+        record = DocumentRecord(
             filename=file.filename,
             total_pages=parsed.total_pages,
             total_chunks=len(chunks),
             ocr_pages_used=parsed.ocr_page_count,
         )
-        _document_registry[file.filename] = summary
+        # add() stages the new row in this session; commit() actually
+        # sends the INSERT and makes it durable; refresh() re-reads the
+        # row back from the database, populating any DB-generated
+        # values (like the auto-incremented `id`) onto our Python
+        # object — without refresh(), `record.id` would still be None
+        # after commit(), since we never set it ourselves.
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
         logger.info(
             "Indexed '%s': %d pages, %d chunks (%d via OCR).",
             file.filename,
@@ -118,7 +133,12 @@ async def upload_document(
             len(chunks),
             parsed.ocr_page_count,
         )
-        return summary
+        return DocumentSummary(
+            filename=record.filename,
+            total_pages=record.total_pages,
+            total_chunks=record.total_chunks,
+            ocr_pages_used=record.ocr_pages_used,
+        )
 
     finally:
         # Always clean up the temp file, whether ingestion succeeded or
@@ -129,6 +149,15 @@ async def upload_document(
 
 
 @router.get("", response_model=list[DocumentSummary])
-def list_documents() -> list[DocumentSummary]:
-    """Returns every document indexed so far in this server process."""
-    return list(_document_registry.values())
+def list_documents(db: Session = Depends(get_db)) -> list[DocumentSummary]:
+    """Returns every document indexed so far, read from Postgres."""
+    records = db.scalars(select(DocumentRecord)).all()
+    return [
+        DocumentSummary(
+            filename=r.filename,
+            total_pages=r.total_pages,
+            total_chunks=r.total_chunks,
+            ocr_pages_used=r.ocr_pages_used,
+        )
+        for r in records
+    ]

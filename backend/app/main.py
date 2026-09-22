@@ -13,10 +13,39 @@ Why this file is deliberately thin:
     grows, which keeps merge conflicts and regressions rare in this file.
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.routes import documents, health, query
 from app.config import settings
+from app.db.postgres import Base, engine
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI's LIFESPAN pattern: an async context manager that runs
+    startup code before `yield` and shutdown code after it, wrapping
+    the entire time the server is running. This replaces the older
+    `@app.on_event("startup")` decorator style (deprecated as of recent
+    FastAPI versions) with a single, more explicit block.
+
+    Base.metadata.create_all(engine) here creates every table (just
+    `documents` so far) if it doesn't already exist — convenient for
+    local development, but NOT how schema changes should be managed in
+    a real production system: create_all() has no concept of
+    MIGRATIONS. If we later add a column to DocumentRecord, create_all()
+    won't alter the existing table to add it — it only creates tables
+    that don't exist yet. A real project uses a migration tool (Alembic
+    is the standard choice for SQLAlchemy) to version and apply schema
+    changes safely. We're using create_all() here to keep this module
+    focused on the wiring itself; adding Alembic is a documented next
+    step, not implemented in this pass.
+    """
+    Base.metadata.create_all(bind=engine)
+    yield
+
 
 # Creating the FastAPI application instance.
 # `title` and `debug` feed directly into the auto-generated OpenAPI docs
@@ -24,6 +53,7 @@ from app.config import settings
 app = FastAPI(
     title=settings.APP_NAME,
     debug=settings.DEBUG,
+    lifespan=lifespan,
 )
 
 # `include_router` mounts all endpoints defined in each router file

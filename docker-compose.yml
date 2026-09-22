@@ -10,24 +10,126 @@
 #   local development environments are set up at most companies before
 #   anything reaches a real Kubernetes cluster.
 #
-# NOTE: this file currently only has the backend service (Module 1).
-#   Postgres, Weaviate, and MLflow services will be added to this same
-#   file as we build Modules 4, 8, and 11 — we're not skipping them,
-#   we simply haven't built what they'd connect to yet.
+# HONEST STATUS: Docker itself is not available in the sandbox this
+# project was built in (noted back in Module 1), so this full file has
+# NOT been runtime-verified with `docker compose up` in that
+# environment. It's written to each service's documented, standard
+# configuration and follows the same patterns as the backend service
+# (which WAS verified running standalone, without Compose, in Module 1)
+# — but the multi-service orchestration itself should be verified on
+# your own machine with Docker installed before you rely on it.
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-docintel}
+      POSTGRES_USER: ${POSTGRES_USER:-docintel_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume, not a bind mount: Postgres's data directory needs
+      # correct file permissions/ownership that Docker manages properly
+      # for named volumes. A bind mount to a host folder can cause
+      # permission mismatches between the container's postgres user and
+      # your host filesystem. Named volumes also survive `docker compose
+      # down` (data persists) but are cleanly removable with `docker
+      # compose down -v` when you actually want a fresh start.
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-docintel_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.27.2
+    ports:
+      - "8080:8080"
+      - "50051:50051"  # gRPC port -- the v4 weaviate-client we wired in
+                        # Module 4 uses gRPC for some operations
+                        # alongside the REST API, so both ports matter.
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      # We disable Weaviate's own built-in vectorizer modules here too
+      # (matching the choice already made in vector_store.py's
+      # WeaviateVectorStore._ensure_collection) -- WE supply vectors
+      # ourselves via embedder.py, so Weaviate doesn't need any
+      # vectorizer module enabled at all.
+      DEFAULT_VECTORIZER_MODULE: "none"
+      ENABLE_MODULES: ""
+      CLUSTER_HOSTNAME: "node1"
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mlflow:
+    image: python:3.12-slim
+    # No dedicated MLflow server image is published upstream, so we run
+    # it from the base Python image, installing mlflow at container
+    # start. This is a reasonable simplification for local development;
+    # a real production deployment would build a small dedicated image
+    # with mlflow pre-installed (via its own Dockerfile) rather than
+    # installing it on every container start, to avoid that startup cost
+    # and to pin the exact mlflow version in a build artifact.
+    command: >
+      sh -c "pip install --no-cache-dir mlflow==2.17.2 &&
+             mlflow server --host 0.0.0.0 --port 5000
+             --backend-store-uri /mlflow/mlruns
+             --default-artifact-root /mlflow/mlruns"
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./mlflow:/mlflow
+
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     ports:
-      - "8000:8000"          # host_port:container_port
+      - "8000:8000"
     env_file:
       - .env
+    environment:
+      # Overriding the .env file's "localhost" defaults with Docker
+      # Compose's SERVICE NAMES as hostnames. Inside Docker's internal
+      # network, containers reach each other by service name (Compose
+      # sets up DNS resolution for this automatically) -- "localhost"
+      # inside the backend container would refer to the backend
+      # container itself, NOT the postgres/weaviate containers.
+      POSTGRES_HOST: postgres
+      WEAVIATE_URL: http://weaviate:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      weaviate:
+        condition: service_healthy
     volumes:
-      - ./backend/app:/app/app   # live-reloads code changes without rebuild
+      - ./backend/app:/app/app
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
       interval: 10s
       timeout: 5s
       retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  weaviate_data:

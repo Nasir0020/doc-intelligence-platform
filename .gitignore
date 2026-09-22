@@ -21,3 +21,6 @@ mlflow/mlruns/
 .DS_Store
 .vscode/
 .idea/
+
+# MLflow local tracking data
+mlruns/
