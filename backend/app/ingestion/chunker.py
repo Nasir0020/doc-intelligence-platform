@@ -128,17 +128,18 @@ def _split_oversized_block(block: "_Block") -> list["_Block"]:
 
     sub_blocks: list[_Block] = []
     current: list[str] = []
-    current_tokens = 0
 
     for sentence in sentences:
-        sentence_tokens = count_tokens(sentence)
-        if current_tokens + sentence_tokens > MAX_CHUNK_TOKENS and current:
+        candidate = current + [sentence]
+        candidate_token_count = count_tokens(" ".join(candidate))
+
+        if candidate_token_count > MAX_CHUNK_TOKENS and current:
             sub_blocks.append(
                 _Block(" ".join(current), block.page_number, block.block_type)
             )
-            current, current_tokens = [], 0
-        current.append(sentence)
-        current_tokens += sentence_tokens
+            current = [sentence]
+        else:
+            current = candidate
 
     if current:
         sub_blocks.append(_Block(" ".join(current), block.page_number, block.block_type))
@@ -208,7 +209,8 @@ def _blocks_to_chunks(blocks: list[_Block], source_filename: str) -> list[Chunk]
 
         # If adding this block would blow the budget, close the current
         # chunk first, then seed the next one with an overlap tail.
-        if current_tokens + block.token_count > MAX_CHUNK_TOKENS and current_texts:
+        prospective_text = "\n\n".join(current_texts + [block.text])
+        if count_tokens(prospective_text) > MAX_CHUNK_TOKENS and current_texts:
             _flush()
 
             # Build the overlap: walk backward through the text we just
