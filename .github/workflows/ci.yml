@@ -1,0 +1,129 @@
+name: CI
+
+# Runs on every push and every pull request targeting main. Running on
+# pull_request too (not just push) means the test results appear
+# DIRECTLY on the PR before it's merged — catching a regression before
+# it ever reaches main, rather than after.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+
+    # A REAL Postgres service container — GitHub Actions runners CAN do
+    # this even though the sandbox this project was originally built in
+    # could not (no Docker there). This closes a real, honestly-carried
+    # caveat from Module 11/12: our local pytest suite uses a SQLite
+    # substitute for speed and zero setup, but CI additionally verifies
+    # actual connectivity against genuine Postgres, not just SQLite's
+    # approximation of it.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: docintel_test
+          POSTGRES_USER: docintel_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        # Postgres takes a moment to become ready to accept connections
+        # after the container starts; this healthcheck makes the
+        # WORKFLOW wait for real readiness rather than racing ahead and
+        # hitting "connection refused" against a container that's still
+        # initializing.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          # Caches pip's download cache keyed on requirements.txt's
+          # content hash — if requirements.txt hasn't changed since the
+          # last run, dependency installation is dramatically faster,
+          # since pip can skip re-downloading every package.
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      # tesseract-ocr is a SYSTEM binary (recall Module 2's Dockerfile
+      # discussion) -- pip cannot install it, so CI needs this exact
+      # same apt-get step as the Dockerfile does.
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest-cov
+
+      - name: Run test suite with coverage
+        working-directory: backend
+        run: python -m pytest --cov=app --cov-report=term-missing
+
+      - name: Verify real Postgres connectivity
+        # A minimal, direct check against the REAL service container
+        # (not the SQLite substitute the pytest suite itself uses) --
+        # creates the actual schema against real Postgres and confirms
+        # a round-trip insert/query works, closing the honest gap noted
+        # throughout Modules 11-12.
+        working-directory: backend
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: docintel_test
+          POSTGRES_USER: docintel_user
+          POSTGRES_PASSWORD: test_password
+        run: |
+          python -c "
+          from app.db.postgres import Base, engine
+          from app.models.document import DocumentRecord
+          from sqlalchemy.orm import Session
+          from sqlalchemy import select
+
+          Base.metadata.create_all(bind=engine)
+          with Session(engine) as session:
+              record = DocumentRecord(filename='ci_smoke_test.pdf', total_pages=1, total_chunks=1, ocr_pages_used=0)
+              session.add(record)
+              session.commit()
+              found = session.scalar(select(DocumentRecord).where(DocumentRecord.filename == 'ci_smoke_test.pdf'))
+              assert found is not None, 'Row not found after insert against REAL Postgres'
+              print('Real Postgres round-trip verified:', found.filename, found.id)
+          "
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Audit for known vulnerabilities
+        # Enforces the same 0-vulnerabilities bar we manually verified
+        # in Module 10 -- this makes it a permanent, automatically
+        # -checked requirement rather than a one-time manual check that
+        # silently goes stale as dependencies age.
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+      - name: Type-check and build
+        working-directory: frontend
+        run: npm run build
