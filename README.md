@@ -50,6 +50,19 @@ docker compose up --build
 See `docs/architecture.md` (added in Module 8) for the full system
 architecture diagram and rationale.
 
+## Deployment
+
+**Recommended path (PaaS):** Railway for the backend + Postgres + Weaviate, and Vercel for the Next.js frontend.
+
+1. Push this repository to GitHub.
+2. On Railway, create a project from the GitHub repository. Railway uses `railway.json` and `backend/Dockerfile` for the backend deployment. Add a Postgres service and configure `ANTHROPIC_API_KEY` and other required environment variables.
+3. On Vercel, import the repository and set the root directory to `frontend/`. Configure `NEXT_PUBLIC_API_BASE_URL` to point to the deployed Railway backend.
+4. For custom domains, DNS configuration and TLS details, see `docs/deployment_guide.md`.
+
+**Self-hosted alternative:** `nginx.conf` and `docker-compose.yml` provide the configuration for a VPS/EC2 deployment with a reverse proxy and TLS.
+
+**CI/CD:** `.github/workflows/ci.yml` runs the backend test suite against a real PostgreSQL service container and builds the frontend on pushes and pull requests. Railway and Vercel can automatically deploy from the connected GitHub repository.
+
 ## Roadmap
 
 - [x] Module 1: Project scaffolding & configuration
@@ -63,6 +76,6 @@ architecture diagram and rationale.
 - [x] Module 9: Evaluation harness
 - [x] Module 10: Frontend (Next.js)
 - [x] Module 11: MLOps (MLflow, persistence & Docker Compose)
-- [ ] Module 12: Testing
-- [ ] Module 13: Cloud deployment
-- [ ] Module 14: Documentation & interview prep
+- [x] Module 12: Testing (32 tests, 88% coverage)
+- [x] Module 13: Cloud deployment
+- [x] Module 14: Documentation & interview prep
