@@ -2,9 +2,11 @@
 test_query_api.py
 ==================
 Integration tests for the full retrieve -> rerank -> generate pipeline,
-exercised through the real HTTP layer, with the Anthropic API mocked
-(same justification as test_generator.py — we don't spend real API
-credits or require a real key just to verify OUR wiring is correct).
+exercised through the real HTTP layer, with the local Ollama/OpenAI-
+compatible LLM mocked.
+
+We don't make a real LLM request here — the purpose is to verify OUR
+API wiring, retrieval pipeline, response handling, and 502 semantics.
 """
 
 from types import SimpleNamespace
@@ -34,20 +36,29 @@ def test_full_query_flow_with_mocked_llm(client, native_pdf_path):
     """
     with open(native_pdf_path, "rb") as f:
         upload_response = client.post(
-            "/documents/upload", files={"file": ("native_report.pdf", f, "application/pdf")}
+            "/documents/upload",
+            files={"file": ("native_report.pdf", f, "application/pdf")},
         )
     assert upload_response.status_code == 201
 
     fake_answer = SimpleNamespace(
-        content=[SimpleNamespace(type="text", text="APAC revenue grew 18% [Source 1].")]
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content="APAC revenue grew 18% [Source 1]."
+                )
+            )
+        ]
     )
-    with patch("anthropic.Anthropic") as MockAnthropic:
+
+    with patch("app.retrieval.generator.OpenAI") as MockOpenAI:
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = fake_answer
-        MockAnthropic.return_value = mock_client
+        mock_client.chat.completions.create.return_value = fake_answer
+        MockOpenAI.return_value = mock_client
 
         response = client.post(
-            "/query", json={"question": "What was the APAC growth?", "top_k": 3}
+            "/query",
+            json={"question": "What was the APAC growth?", "top_k": 3},
         )
 
     assert response.status_code == 200
@@ -60,19 +71,25 @@ def test_full_query_flow_with_mocked_llm(client, native_pdf_path):
 def test_query_returns_502_when_llm_call_fails(client, native_pdf_path):
     """
     Verifies our 502 (upstream failure) semantics from Module 8: when
-    the underlying Anthropic call raises, the API should surface a
-    clear 502, not an opaque 500.
+    the underlying LLM call raises, the API should surface a clear 502,
+    not an opaque 500.
     """
     with open(native_pdf_path, "rb") as f:
         client.post(
-            "/documents/upload", files={"file": ("native_report.pdf", f, "application/pdf")}
+            "/documents/upload",
+            files={"file": ("native_report.pdf", f, "application/pdf")},
         )
 
-    with patch("anthropic.Anthropic") as MockAnthropic:
+    with patch("app.retrieval.generator.OpenAI") as MockOpenAI:
         mock_client = MagicMock()
-        mock_client.messages.create.side_effect = RuntimeError("simulated API outage")
-        MockAnthropic.return_value = mock_client
+        mock_client.chat.completions.create.side_effect = RuntimeError(
+            "simulated LLM outage"
+        )
+        MockOpenAI.return_value = mock_client
 
-        response = client.post("/query", json={"question": "What was the APAC growth?"})
+        response = client.post(
+            "/query",
+            json={"question": "What was the APAC growth?"},
+        )
 
     assert response.status_code == 502

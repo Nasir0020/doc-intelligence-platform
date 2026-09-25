@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     WEAVIATE_URL: str = "http://localhost:8080"
 
     # --- LLM provider — populated when we build Module 7 ---
-    ANTHROPIC_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
 
     @property
     def postgres_url(self) -> str:

@@ -88,7 +88,7 @@ def ask_question(
     except Exception as exc:
         # 502 Bad Gateway specifically (not 500 Internal Server Error):
         # the failure originates from an UPSTREAM dependency (the
-        # Anthropic API call inside generate_answer), not from a bug in
+        # # the upstream LLM call inside generate_answer), not from a bug in
         # our own server logic. Distinguishing "our code broke" (500)
         # from "a service we depend on broke" (502) is genuinely useful
         # signal for whoever is debugging or monitoring this in

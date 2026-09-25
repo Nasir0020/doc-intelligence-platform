@@ -23,13 +23,15 @@ Which other files use this:
 import logging
 import re
 
-from app.config import settings
+from openai import OpenAI
+
+
 from app.db.vector_store import SearchResult
 from app.retrieval.schemas import Citation, GeneratedAnswer
 
 logger = logging.getLogger(__name__)
 
-GENERATION_MODEL = "claude-sonnet-4-5"
+GENERATION_MODEL = "llama3:latest"
 
 SYSTEM_PROMPT = """You are a document Q&A assistant. You answer questions using ONLY the \
 numbered source excerpts provided below — never your own general knowledge.
@@ -85,7 +87,7 @@ def _extract_citations(
 
     citations = []
     for source_number in sorted(cited_numbers):
-        index = source_number - 1  # source numbers are 1-indexed in the prompt
+        index = source_number - 1
         if 0 <= index < len(sources):
             source = sources[index]
             citations.append(
@@ -97,11 +99,6 @@ def _extract_citations(
                 )
             )
         else:
-            # The model cited a source number we never actually sent it
-            # (a real failure mode — LLMs occasionally hallucinate
-            # citation numbers outside the valid range). We log this
-            # rather than silently including a broken/fabricated
-            # citation in the response.
             logger.warning(
                 "Model cited [Source %d] which is out of range (only %d sources "
                 "were provided) — dropping this citation as invalid.",
@@ -127,27 +124,30 @@ def generate_answer(question: str, sources: list[SearchResult]) -> GeneratedAnsw
             grounded=False,
         )
 
-    import anthropic
+    client = OpenAI(
+        base_url="http://host.docker.internal:11434/v1",
+        api_key="ollama",
+    )
 
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-
-    response = client.messages.create(
+    response = client.chat.completions.create(
         model=GENERATION_MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": _build_user_prompt(question, sources),
+            },
+        ],
         max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": _build_user_prompt(question, sources)}],
     )
 
-    # response.content is a list of content BLOCKS (a message can, in
-    # general, mix text blocks with other block types like tool calls).
-    # We only expect plain text here since we didn't provide any tools,
-    # so we concatenate every text block's text — this is more robust
-    # than assuming there's exactly one block at index 0.
-    answer_text = "".join(
-        block.text for block in response.content if block.type == "text"
-    )
+    answer_text = response.choices[0].message.content or ""
 
     grounded = not answer_text.startswith("INSUFFICIENT_CONTEXT:")
     citations = _extract_citations(answer_text, sources) if grounded else []
 
-    return GeneratedAnswer(answer_text=answer_text, citations=citations, grounded=grounded)
+    return GeneratedAnswer(
+        answer_text=answer_text,
+        citations=citations,
+        grounded=grounded,
+    )

@@ -3,7 +3,7 @@ test_documents_api.py
 ======================
 Integration tests: exercising the REAL HTTP layer (FastAPI's
 TestClient), the REAL parsing/chunking/embedding pipeline, and a REAL
-(SQLite-substitute) database — everything except the Anthropic API,
+(SQLite-substitute) database — everything except the LLM,
 which never gets called by these endpoints anyway.
 
 This is the difference between "unit" and "integration" tests in this
